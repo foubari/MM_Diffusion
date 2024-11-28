@@ -3,28 +3,22 @@ from __future__ import print_function
 import errno
 
 import torch
-from torch.utils.data import random_split
-from sklearn.model_selection import train_test_split
+import torch.utils.data as data_utils
 import torchvision
 from torchvision.datasets.utils import download_url
 import torchvision.transforms as transforms
 import torchvision.transforms.functional as F_transforms
-from .utils import draw_exp_zeros, flat_to_square_index
-from .utils import draw_circle
+
 
 import numpy as np
 
 import os
 from PIL import Image
 
-import pickle
+from torchflow.data import DATA_PATH
 
-HOME = '/export/fhome2/denis/bct_generation_data_and_results/multinomial_diffusion/data/'
-#go to ama15 if not already there
-import subprocess
-hostname = subprocess.run(["hostname"], capture_output=True, text=True).stdout.strip()
-if not 'ama15' in hostname:
-    HOME = '/net/10.215.25.15' + HOME
+ROOT = DATA_PATH
+
 
 def fn_to_tensor(img):
     img = np.array(img)
@@ -43,177 +37,191 @@ class toTensor:
     def __call__(self, img):
         return fn_to_tensor(img)
 
-class Binary12(torch.utils.data.Dataset):
-    def __init__(self, N=1000, p=[0.25, 0.25, 0.25, 0.25], transform=None):
-        self.p = p
-        self.transform = transform
 
-        #generate the data at init
-        self.data = [self.generate_sample() for _ in range(N)]
-    
-    def generate_sample(self):
-        #generate a sample
-        cat = np.random.choice([0, 1, 2, 3], p=self.p)
-        if cat == 0:
-            return torch.tensor([1, 0], dtype=torch.int64).reshape(1, 1, 2)
-        elif cat == 1:
-            return torch.tensor([0, 1], dtype=torch.int64).reshape(1, 1, 2)
-        elif cat == 2:
-            return torch.tensor([1, 1], dtype=torch.int64).reshape(1, 1, 2)
-        else:
-            return torch.tensor([0, 0], dtype=torch.int64).reshape(1, 1, 2)
+class BMNIST(torch.utils.data.Dataset):
+    """ BINARY MNIST """
+    urls = ['http://www.cs.toronto.edu/~larocheh/public/datasets/' \
+            'binarized_mnist/binarized_mnist_{}.amat'.format(split)
+            for split in ['train', 'valid', 'test']]
+    raw_folder = "raw"
+    processed_folder = "processed"
+    training_file = "train.pt"
+    val_file = "val.pt"
+    test_file = "test.pt"
+
+    def __init__(self, root=ROOT, split='train', transform=None, download=True):
+        self.root = os.path.expanduser(root)
+        self.transform = transform
+        self.split = split
+
+        if split not in ('train', 'val', 'test'):
+            raise ValueError('split should be one of {train, val, test}')
+
+        if download:
+            self.download()
+
+        if not self._check_exists():
+            raise RuntimeError('Dataset not found.' +
+                               ' You can use download=True to download it')
+
+        data_file = {'train': self.training_file,
+                     'val': self.val_file,
+                     'test': self.test_file}[split]
+        path = os.path.join(self.root, self.processed_folder, data_file)
+        self.data = torch.load(path)
+
+    def __getitem__(self, index):
+        img = self.data[index]
+
+        if self.transform is not None:
+            img = img.byte()
+            pil_img = F_transforms.to_pil_image(img)
+            pil_img = self.transform(pil_img)
+            img = fn_to_tensor(pil_img)
+            img = img.long()
+
+        # doing this so that it is consistent with all other datasets
+        # to return a PIL Image
+
+        return img
 
     def __len__(self):
         return len(self.data)
-    
-    def __getitem__(self, idx):
-        sample = self.data[idx]
-        if self.transform:
-            sample = self.transform(sample)
-        return sample
 
-class MultiClassImagesV1(torch.utils.data.Dataset):
-    def __init__(self, generate_data=False, N=100, folder_path='multi_class_images_v1', transform=None):
-        
-        folder_path = os.path.join(HOME, folder_path)
-        #retrieve the data from the folder
-        self.data = []
-        if not generate_data:
-            # List all files in the folder
-            files = os.listdir(folder_path)
+    def _check_exists(self):
+        processed_folder = os.path.join(self.root, self.processed_folder)
+        train_path = os.path.join(processed_folder, self.training_file)
+        val_path = os.path.join(processed_folder, self.val_file)
+        test_path = os.path.join(processed_folder, self.test_file)
+        return os.path.exists(train_path) and os.path.exists(val_path) and \
+            os.path.exists(test_path)
 
-            png_files = [file for file in files if file.endswith('.png')]
+    def _read_raw_image_file(self, path):
 
-            for file in png_files:
-                img = Image.open(os.path.join(folder_path, file))
-                #convert the PIL image to a tensor of dtype torch.int64
-                img = fn_to_tensor(img)
-                img = img.to(torch.int64)
-                self.data.append(img)
-        self.transform = transform
+        raw_file = os.path.join(self.root, self.raw_folder, path)
+        all_images = []
+        with open(raw_file) as f:
+            for line in f:
+                im = [int(x) for x in line.strip().split()]
+                assert len(im) == 28 ** 2
+                all_images.append(im)
+        return torch.from_numpy(np.array(all_images)).view(-1, 28, 28)
 
-    def __len__(self):
-        return len(self.data)
-    
-    def __getitem__(self, idx):
-        sample = self.data[idx]
-        if self.transform:
-            sample = self.transform(sample)
-        return sample
+    def download(self):
+        """
+        Download the BMNIST data if it doesn't exist in
+        processed_folder already.
+        """
+        if self._check_exists():
+            return
+
+        # Create folders
+        try:
+            os.makedirs(os.path.join(self.root, self.raw_folder))
+            os.makedirs(os.path.join(self.root, self.processed_folder))
+        except OSError as e:
+            if e.errno == errno.EEXIST:
+                pass
+            else:
+                raise
+
+        for url in self.urls:
+            filename = url.rpartition('/')[2]
+            download_url(url, root=os.path.join(self.root, self.raw_folder),
+                         filename=filename, md5=None)
+
+        # process and save as torch files
+        print('Processing raw data..')
+
+        training_set = self._read_raw_image_file('binarized_mnist_train.amat')
+        val_set = self._read_raw_image_file('binarized_mnist_valid.amat')
+        test_set = self._read_raw_image_file('binarized_mnist_test.amat')
+
+        processed_dir = os.path.join(self.root, self.processed_folder)
+        with open(os.path.join(processed_dir, self.training_file), 'wb') as f:
+            torch.save(training_set, f)
+        with open(os.path.join(processed_dir, self.val_file), 'wb') as f:
+            torch.save(val_set, f)
+        with open(os.path.join(processed_dir, self.test_file), 'wb') as f:
+            torch.save(test_set, f)
+
+        print('Completed data download.')
 
 
-class MultiClassImagesV2(torch.utils.data.Dataset):
-    def __init__(self, generate_data=False, N=100, folder_path='../images/multi_class_images_v2', transform=None):
+def load_bmnist(batch_size, download=True, **kwargs):
+    train_transforms = transforms.Compose([
+        transforms.Pad(1, padding_mode='edge'),
+        transforms.RandomCrop(28),
+        toTensor()
+    ])
 
-        folder_path = os.path.join(HOME, folder_path)
-        #retrieve the data from the folder
-        self.data = []
-        if not generate_data:
-            # List all files in the folder
-            files = os.listdir(folder_path)
+    test_transforms = transforms.Compose([
+        toTensor()
+    ])
 
-            png_files = [file for file in files if file.endswith('.png')]
+    root = ROOT + '/bmnist'
+    train_set = BMNIST(root, 'train', train_transforms, download)
+    val_set = BMNIST(root, 'val', test_transforms, download)
+    test_set = BMNIST(root, 'test', test_transforms, download)
 
-            for file in png_files:
-                img = Image.open(os.path.join(folder_path, file))
-                #convert the PIL image to a tensor of dtype torch.int64
-                img = fn_to_tensor(img)
-                img = img.to(torch.int64)
-                self.data.append(img)
-        self.transform = transform
+    trainloader = torch.utils.data.DataLoader(train_set, batch_size=batch_size,
+                                              shuffle=True, num_workers=4)
+    valloader = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
+                                            shuffle=False, num_workers=10)
+    testloader = torch.utils.data.DataLoader(test_set, batch_size=batch_size,
+                                             shuffle=False, num_workers=10)
 
-    def __len__(self):
-        return len(self.data)
-    
-    def __getitem__(self, idx):
-        sample = self.data[idx]
-        if self.transform:
-            sample = self.transform(sample)
-        return sample
+    return trainloader, valloader, testloader
 
-class ExpZeros(torch.utils.data.Dataset):
-    def __init__(self, generate_data=False, h=4, w=4, N=100, file_path='exp_zeros/data.pkl', transform=None):
 
-        #retrieve the data from the folder
-        self.data = []
-        if not generate_data:
-            file_path = os.path.join(HOME, file_path)
-            self.load_data(file_path)
+def load_svhn(args, **kwargs):
+    # set args
+    args.input_size = [3, 32, 32]
+    args.num_classes = 256
 
-        if generate_data:
-            self.generate_data(h,w,N)
-        
-        self.transform = transform
-    
-    def generate_data(self, h, w, N):
-        #draw the number of zeros
-        seed = 0
-        d = h*w
-        zeros = draw_exp_zeros(N, d, seed)
+    train_transform = transforms.Compose([
+        transforms.Pad(1, padding_mode='edge'),
+        transforms.RandomCrop(32),
+        toTensor()
+    ])
 
-        for i, zero in enumerate(zeros):
-            #add (d - zero) randomly chosen white pixels to a black image
-            sample = torch.zeros((h,w), dtype=torch.int64)
-            wp = [torch.tensor(flat_to_square_index(i,w)) for i in np.random.choice(d, d-zero, replace=False)]
-            rows = [p[0] for p in wp]
-            cols = [p[1] for p in wp]
-            sample[rows,cols] = 1
+    test_transform = transforms.Compose([
+        toTensor()
+    ])
 
-            #add it to the data
-            self.data.append(sample)
+    root = ROOT + '/svhn'
+    train_data = torchvision.datasets.SVHN(
+        root, split='train', transform=train_transform, target_transform=None,
+        download=True)
 
-    def save_data(self, save_path):
-        with open(save_path, 'wb') as f:
-            pickle.dump(self.data, f)
-        print(f"Dataset saved to {save_path}")
+    stepsize = len(train_data) // 10000
+    val_indcs = np.arange(0, len(train_data), stepsize)
+    train_idcs = np.setdiff1d(np.arange(len(train_data)), val_indcs)
 
-    def load_data(self, file_path):
-        with open(file_path, 'rb') as f:
-            self.data = pickle.load(f)
-        print(f"Dataset loaded from {file_path}")
+    print('SVHN division: train: {}, val: {}, every {}th index is val.'.format(
+        len(train_idcs), len(val_indcs), stepsize
+    ))
 
-    def __len__(self):
-        return len(self.data)
-    
-    def __getitem__(self, idx):
-        sample = self.data[idx]
-        if self.transform:
-            sample = self.transform(sample)
-        return sample
+    train_data = torch.utils.data.Subset(
+        train_data, indices=train_idcs)
+    train_loader = torch.utils.data.DataLoader(
+        train_data, batch_size=args.batch_size, shuffle=True, num_workers=4)
 
-class Circles(torch.utils.data.Dataset):
-    def __init__(self, generate_data=False, h=64, w=64, rmin=8,rmax=30,file_path='circles/data.pkl', transform=None):
+    val_data = torchvision.datasets.SVHN(
+        root, split='train', transform=test_transform, target_transform=None,
+        download=True)
 
-        #retrieve the data from the folder
-        self.data = []
-        if not generate_data:
-            file_path = os.path.join(HOME, file_path)
-            self.load_data(file_path)
+    val_data = torch.utils.data.Subset(
+        val_data, indices=val_indcs)
+    val_loader = torch.utils.data.DataLoader(val_data,
+                                             batch_size=args.batch_size,
+                                             shuffle=False, num_workers=4)
 
-        if generate_data:
-            self.generate_data(h,w,rmin,rmax)
-        
-        self.transform = transform
-    
-    def generate_data(self, h, w, rmin, rmax):
-        self.data = [draw_circle(h,w,r) for r in range(rmin, rmax+1)]
+    test_data = torchvision.datasets.SVHN(
+        root, split='test', transform=test_transform, target_transform=None,
+        download=True)
+    test_loader = torch.utils.data.DataLoader(test_data,
+                                              batch_size=args.batch_size,
+                                              shuffle=False, num_workers=4)
 
-    def save_data(self, save_path):
-        save_path = os.path.join(HOME, save_path)
-        with open(save_path, 'wb') as f:
-            pickle.dump(self.data, f)
-        print(f"Dataset saved to {save_path}")
-
-    def load_data(self, file_path):
-        with open(file_path, 'rb') as f:
-            self.data = pickle.load(f)
-        print(f"Dataset loaded from {file_path}")
-
-    def __len__(self):
-        return len(self.data)
-    
-    def __getitem__(self, idx):
-        sample = self.data[idx]
-        if self.transform:
-            sample = self.transform(sample)
-        return sample
+    return train_loader, val_loader, test_loader, args
