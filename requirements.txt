@@ -4,4 +4,3 @@ torch
 torchvision
 torchnet
 jupyter
-json

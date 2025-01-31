@@ -1,3 +1,6 @@
+import sys
+sys.path.append("drive/MyDrive/MM_Diffusion/multinomial_diffusion")
+
 import os
 import math
 import torch

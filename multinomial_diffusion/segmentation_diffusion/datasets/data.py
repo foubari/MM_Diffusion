@@ -1,4 +1,5 @@
 import math
+import os
 import torch
 import numpy as np
 from torch.utils.data import DataLoader
@@ -20,6 +21,9 @@ def add_data_args(parser):
     # Data params
     parser.add_argument('--dataset', type=str, default='cityscapes_coarse',
                         choices=dataset_choices)
+
+    parser.add_argument('--data_root', type=str, default='/home/quintana/github/MM_Diffusion',
+                        help='Root directory for the dataset')
 
     # Train params
     parser.add_argument('--batch_size', type=int, default=32)
@@ -57,16 +61,16 @@ def get_data(args):
         pil_transforms = get_augmentation(args.augmentation, args.dataset,
                                           (32, 64))
         pil_transforms = Compose(pil_transforms)
-        train = CityscapesFast(split='train', resolution=(32, 64), transform=pil_transforms, only_categories=True)
-        test = CityscapesFast(split='test', resolution=(32, 64), transform=pil_transforms, only_categories=True)
+        train = CityscapesFast(root=args.data_root, split='train', resolution=(32, 64), transform=pil_transforms, only_categories=True)
+        test = CityscapesFast(root=args.data_root, split='test', resolution=(32, 64), transform=pil_transforms, only_categories=True)
     elif args.dataset == 'cityscapes_fine':
         data_shape = (1, 32, 64)
         num_classes = 34
         pil_transforms = get_augmentation(args.augmentation, args.dataset,
                                           (32, 64))
         pil_transforms = Compose(pil_transforms)
-        train = CityscapesFast(split='train', resolution=(32, 64), transform=pil_transforms, only_categories=False)
-        test = CityscapesFast(split='test', resolution=(32, 64), transform=pil_transforms, only_categories=False)
+        train = CityscapesFast(root=args.data_root, split='train', resolution=(32, 64), transform=pil_transforms, only_categories=False)
+        test = CityscapesFast(root=args.data_root, split='test', resolution=(32, 64), transform=pil_transforms, only_categories=False)
 
     elif args.dataset == 'cityscapes_coarse_large':
         data_shape = (1, 128, 256)
@@ -76,10 +80,10 @@ def get_data(args):
         pil_transforms = Compose(pil_transforms)
 
         train = CityscapesFast(
-            split='train', resolution=(128, 256), transform=pil_transforms,
+            root=args.data_root, split='train', resolution=(128, 256), transform=pil_transforms,
             only_categories=True)
         test = CityscapesFast(
-            split='test', resolution=(128, 256), transform=pil_transforms,
+            root=args.data_root, split='test', resolution=(128, 256), transform=pil_transforms,
             only_categories=True)
 
     elif args.dataset == 'cityscapes_fine_large':
@@ -89,10 +93,10 @@ def get_data(args):
                                           (128, 256))
         pil_transforms = Compose(pil_transforms)
         train = CityscapesFast(
-            split='train', resolution=(128, 256), transform=pil_transforms,
+            root=args.data_root, split='train', resolution=(128, 256), transform=pil_transforms,
             only_categories=False)
         test = CityscapesFast(
-            split='test', resolution=(128, 256), transform=pil_transforms,
+            root=args.data_root, split='test', resolution=(128, 256), transform=pil_transforms,
             only_categories=False)
 
     else:

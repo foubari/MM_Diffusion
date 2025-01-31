@@ -1,4 +1,5 @@
 import os
+import sys
 
 import torch
 import numpy as np
@@ -8,6 +9,9 @@ from torchvision import transforms
 from cityscapes import Cityscapes
 from cityscapes import ToTensorNoNorm
 
+DATA_ROOT = "/home/quintana/github/MM_Diffusion/data/Cityscapes/gtFine_trainvaltest"
+
+sys.path.append(DATA_ROOT)
 
 def main(H, W):
     data_transforms = transforms.Compose([
@@ -15,11 +19,11 @@ def main(H, W):
         ToTensorNoNorm()])
 
     data_set = Cityscapes(
-            root='./', split='train', mode='fine', target_type='semantic',
+            root=DATA_ROOT, split='train', mode='fine', target_type='semantic',
             transform=data_transforms, target_transform=None, transforms=None,
             only_categories=False)
     test_set = Cityscapes(
-        root='./', split='val', mode='fine', target_type='semantic',
+        root=DATA_ROOT, split='val', mode='fine', target_type='semantic',
         transform=data_transforms, target_transform=None, transforms=None,
         only_categories=False)
 

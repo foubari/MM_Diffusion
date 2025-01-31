@@ -1,0 +1,11 @@
+*.pyc
+**/events.out.tfevents.*
+**/*.png
+**/*.jpeg
+**/*.zip
+.vscode
+**/*.npy
+.code-workspace
+.env
+**/.ipynb_checkpoints
+data

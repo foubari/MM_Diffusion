@@ -23,6 +23,7 @@ from torchvision.datasets.utils import extract_archive, verify_str_arg, iterable
 from torchvision.datasets.vision import VisionDataset
 from PIL import Image
 
+
 ROOT = None
 
 CityscapesClass = namedtuple('CityscapesClass', ['name', 'id', 'train_id', 'category', 'category_id',
@@ -359,4 +360,4 @@ if __name__ == '__main__':
         batch_size = 100
 
     args = Args()
-    trainloader, valloader, testloader, args = get(args, '../data/cityscapes')
+    trainloader, valloader, testloader, args = get(args, '/home/quintana/github/MM_Diffusion/data/Cityscapes/gtFine_trainvaltest')

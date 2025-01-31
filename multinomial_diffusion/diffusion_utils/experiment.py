@@ -7,12 +7,8 @@ import time
 from shutil import copy2
 import pathlib
 
-HOME = '/export/fhome2/denis/bct_generation_data_and_results/multinomial_diffusion'
-#go to ama15 if not already there
 import subprocess
 hostname = subprocess.run(["hostname"], capture_output=True, text=True).stdout.strip()
-if not 'ama15' in hostname:
-    HOME = '/net/10.215.25.15' + HOME
 
 # Experiment
 from diffusion_utils import BaseExperiment
@@ -65,9 +61,9 @@ class DiffusionExperiment(BaseExperiment):
                  train_loader, eval_loader,
                  model, optimizer, scheduler_iter, scheduler_epoch):
         if args.log_home is None:
-            self.log_base = os.path.join(HOME, 'log/')
+            self.log_base = 'log/'
         else:
-            self.log_base = os.path.join(HOME, args.log_home)
+            self.log_base = args.log_home
 
         # Edit args
         if args.eval_every is None:

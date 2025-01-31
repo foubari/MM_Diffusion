@@ -1,3 +1,6 @@
+import sys
+sys.path.append("drive/MyDrive/MM_Diffusion/multinomial_diffusion")
+
 import os
 import math
 import torch
@@ -36,6 +39,7 @@ parser.add_argument('--samples', type=int, default=64)
 parser.add_argument('--nrow', type=int, default=8)
 parser.add_argument('--seed', type=int, default=0)
 parser.add_argument('--double', type=eval, default=False)
+parser.add_argument('--out_dir', type=str, default=None)
 eval_args = parser.parse_args()
 
 path_args = '{}/args.pickle'.format(eval_args.model)
@@ -145,7 +149,7 @@ for j in range(chain_samples):
         axs[1, i-start].imshow(starts[i][j][0].cpu().numpy(), cmap = gcmap, vmin=0, vmax=K-1)
         axs[1, i-start].axis('off')
         axs[1, i-start].set_title('t = {}'.format(i+1))
-    plt.savefig('chain_sample_start_fsteps_{}.png'.format(j+1))
+    plt.savefig(os.path.join(eval_args.out_dir, 'chain_sample_start_fsteps_{}.png'.format(j+1)))
 
 """ #save the samples_chain in the folder with pickle
 with open(path_samples[:-4] + '.pickle', 'wb') as f:

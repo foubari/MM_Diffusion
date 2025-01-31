@@ -1,3 +1,6 @@
+import sys
+sys.path.append("drive/MyDrive/MM_Diffusion/multinomial_diffusion")
+
 import torch
 import argparse
 from diffusion_utils.utils import add_parent_path, set_seeds
