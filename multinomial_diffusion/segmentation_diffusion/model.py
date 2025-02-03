@@ -1,11 +1,10 @@
 import math
-
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
-from diffusion_utils.diffusion_multinomial import MultinomialDiffusion, CondMultinomialDiffusion, PartialDiffusion
-from layers.layers import SegmentationUnet, CondSegmentationUnet
 
+from multinomial_diffusion.diffusion_utils.diffusion_multinomial import MultinomialDiffusion, CondMultinomialDiffusion, PartialDiffusion
+from multinomial_diffusion.segmentation_diffusion.layers.layers import SegmentationUnet, CondSegmentationUnet
 
 def add_model_args(parser):
     # Model params

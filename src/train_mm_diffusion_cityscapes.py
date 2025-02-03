@@ -8,6 +8,27 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from datetime import datetime
 from dataset_manipulation.dataloaders import DataLoaderFactory
+from models.vae_cityscapes import CS_unimodal
+import sys
+import os
+import argparse
+
+from multinomial_diffusion.segmentation_diffusion.multimodal.model import MultiModalSegmentationUnet
+from multinomial_diffusion.segmentation_diffusion.model import get_model as get_model_seg_unet
+from multinomial_diffusion.segmentation_diffusion.experiment import Experiment, CondExperiment, add_exp_args
+
+# Data
+add_parent_path(level=1)
+from datasets.data import get_data, get_data_id, add_data_args
+
+# Model
+from model import get_model, get_model_id, add_model_args
+
+# Optim
+from diffusion_utils.optim.multistep import get_optim, get_optim_id, add_optim_args
+
+
+print("started traoning!")
 
 ### DEVICE ###
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -17,17 +38,29 @@ torch.manual_seed(0)
 
 ### DATA ###
 data_path = 'data'
+SUBSET_RATIO = 0.1
+N_MODALITIES = 8
 dlf = DataLoaderFactory(datadir=data_path, num_workers=1, pin_memory=True)
 
-"""
-Choose a modality dataset name from the following 'polymnist_unimodal','cub_image', 'cub_caption'
-For polymnist choose the modality number in {0,1,2,3,4}.
-For cityscapes choose the modality number in {0,..,7}
-Then you can modify the parameters below
-"""
+dataset_name = 'cityscapes_multimodal'
 
-dataset_name = 'cityscapes_unimodal'
-modality = 1
+###########
+## Setup ##
+###########
+
+parser = argparse.ArgumentParser()
+add_exp_args(parser)
+add_data_args(parser)
+add_model_args(parser)
+add_optim_args(parser)
+args = parser.parse_args()
+set_seeds(args.seed)
+
+##################
+## Specify data ##
+##################
+
+args.num_classes = 8
 
 ### UTILS ###
 def plot_training_curves(mean_losses, mean_neg_loglikelihood,  mean_divs):
@@ -89,24 +122,17 @@ def get_objective(obj):
     else:
         raise ValueError(f"Dataset '{obj}' is not supported. Choose from 'elbo', 'cat_elbo', 'iwae', 'dreg'.")
 
-def get_model(dataset_name, params):
-    if dataset_name == 'cub_caption':
-        from models.vae_cub_text import CUB_Sentence
-        return CUB_Sentence(params)
-    elif dataset_name == 'cub_image':
-        from models.vae_cub_image import CUB_Image
-        return CUB_Image(params)
-    elif dataset_name ==  'polymnist_unimodal':
-        from models.vae_polymnist import PM_unimodal
-        return PM_unimodal(params)
-    elif dataset_name == 'cityscapes_unimodal':
-        from models.vae_cityscapes import CS_unimodal
-        return CS_unimodal(params)
+def get_model(dataset_name, params_diff, params_vaes):
+
+    params_diff["modalities_vaes"] = [CS_unimodal(params) for params in params_vaes]
+
+    if dataset_name == 'cityscapes_multimodal':
+        return MultiModalSegmentationUnet(params_diff)
     else:
-            raise ValueError(f"Dataset '{dataset_name}' is not supported. Choose from 'cityscapes_unimodal', 'polymnist_unimodal', 'cub_caption', 'cub_image'.")
+        raise ValueError(f"Dataset '{dataset_name}' is not supported. Choose from 'cityscapes_multimodal'.")
     
 def create_log_dir(epochs, beta, latent_dim, dist, obj='elbo', dataset_name=dataset_name, modality=None):
-    if dataset_name in ['polymnist_unimodal', 'cityscapes_unimodal']:
+    if dataset_name in ['polymnist_mulimodal', 'cityscapes_multimodal']:
         dataset_name+='_'+str(modality)
     # Generate a unique directory name
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -133,7 +159,7 @@ def train(model, train_loader, optimizer, epochs, beta, log_path, objective,  lo
         batch_divs = []
 
         for i, (data,_) in enumerate(train_loader):
-            if dataset_name == 'polymnist_unimodal':
+            if dataset_name == 'polymnist_mulimodal':
                 data = data[0]
             data = data.to(device)
             optimizer.zero_grad()
@@ -179,16 +205,25 @@ You can define the model hyper parameters here
 """
 
 class Params:
-    def __init__(self, device = device, modality=modality):
+    def __init__(self, dataset_name, device=device):
         self.priorposterior = 'Normal'
-        if dataset_name == 'cub_image':
-            self.latent_dim = 16
-        elif dataset_name == 'cub_caption':
-            self.latent_dim = 48
-        elif dataset_name == 'polymnist_unimodal':
+        if dataset_name == 'polymnist_mulimodal':
             self.latent_dim = 64
-        elif dataset_name == 'cityscapes_unimodal':
+        elif dataset_name == 'cityscapes_multimodal':
             self.latent_dim = 128
+        else:
+            raise ValueError(f"dataset name {dataset_name} is not supported")
+        self.device = device
+
+class ParamsVAE:
+    def __init__(self, dataset_name, device=device, modality=None):
+        self.priorposterior = 'Normal'
+        if dataset_name == 'polymnist_mulimodal':
+            self.latent_dim = 64
+        elif dataset_name == 'cityscapes_multimodal':
+            self.latent_dim = 128
+        else:
+            raise ValueError(f"dataset name {dataset_name} is not supported")
         self.modality = modality            
         self.device = device
 
@@ -204,14 +239,16 @@ K=1
 plot_freq = 5
 lr = 1e-3
 
-params = Params()
-model = get_model(dataset_name, params).to(device)
+params_vaes = [ParamsVAE(dataset_name=dataset_name, device=device, modality=mod) for mod in range(N_MODALITIES)]
+_, _, data_shape, num_classes = get_data(args)
+params_diff = {"seg_unet": get_model_seg_unet(args, data_shape=data_shape)}
+model = get_model(dataset_name, params_diff, params_vaes).to(device)
 optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()),
                        lr=lr, amsgrad=True)
 
 ### TRAIN ###
 
-train_loader, test_loader = dlf.get_dataloader(dataset_name, batch_size, modality=params.modality)
+train_loader, test_loader = dlf.get_dataloader(dataset_name, batch_size, modality=params.modality, subset_percentage=SUBSET_RATIO)
 log_path = create_log_dir(epochs, beta, params.latent_dim, params.priorposterior, obj=obj, modality=params.modality)
 mean_losses, mean_neg_loglikelihood,  mean_divs = train(model, train_loader, optimizer, epochs, beta, log_path,
           log_interval=1, K=K, objective=objective)

@@ -9,3 +9,4 @@
 .env
 **/.ipynb_checkpoints
 data
+.venv

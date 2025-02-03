@@ -197,3 +197,24 @@ class CondExperiment(DiffusionExperiment):
         y = y[:num_samples]
         with torch.no_grad():
             return self.model.sample(num_samples, y.to(self.args.device)).cpu()
+
+class MultiModalExperiment(Experiment):
+
+    def train_fn(self, epoch):
+        self.model.train()
+        loss_sum = 0.0
+        loss_count = 0
+        for x in self.train_loader:
+            self.optimizer.zero_grad()
+            loss = elbo_bpd(self.model, x.to(self.args.device))
+            loss.backward()
+            if self.args.clip_value: torch.nn.utils.clip_grad_value_(self.model.parameters(), self.args.clip_value)
+            if self.args.clip_norm: torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip_norm)
+            self.optimizer.step()
+            if self.scheduler_iter: self.scheduler_iter.step()
+            loss_sum += loss.detach().cpu().item() * len(x)
+            loss_count += len(x)
+            print('Training. Epoch: {}/{}, Datapoint: {}/{}, Bits/dim: {:.3f}'.format(epoch+1, self.args.epochs, loss_count, len(self.train_loader.dataset), loss_sum/loss_count), end='\r')
+        print('')
+        if self.scheduler_epoch: self.scheduler_epoch.step()
+        return {'bpd': loss_sum/loss_count}

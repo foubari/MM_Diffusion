@@ -2,11 +2,12 @@ import os
 import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms, datasets
-from torchnet.dataset import TensorDataset, ResampleDataset
+#from torchnet.dataset import TensorDataset, ResampleDataset #because I (denis) don't have torchnet
 # from .datasets_PolyMNIST import PolyMNISTDataset
 # from .dataset_CUB import CUBSentences, resampler
-from dataset_manipulation.datasets_PolyMNIST import PolyMNISTDataset
-from dataset_manipulation.dataset_CUB import CUBSentences, resampler
+#from dataset_manipulation.datasets_PolyMNIST import PolyMNISTDataset
+from dataset_manipulation.datasets_Cityscapes import CityscapesDataset, CityscapesMultiModalDataset
+#from dataset_manipulation.dataset_CUB import CUBSentences, resampler
 
 
 # Constants
@@ -190,12 +191,72 @@ class DataLoaderFactory:
 
         return train_loader, test_loader
 
+    def get_dataloader_cityscapes_unimodal(self, batch_size, shuffle=True, device='cuda', modality=0):
+        """
+        Get Cityscapes unimodal DataLoaders for a specific modality.
+        
+        Args:
+            batch_size (int): Number of samples per batch.
+            shuffle (bool): Whether to shuffle the data.
+            device (str): Device to load data (e.g., 'cuda' or 'cpu').
+            modality (int): Modality index (e.g., 1, 2, ...).
+        
+        Returns:
+            tuple: (train_loader, test_loader)
+        """
+        #unim_datapaths_train = [os.path.join(self.datadir, "Cityscapes", "train")] # f"m{modality}")]
+        #unim_datapaths_test = [os.path.join(self.datadir, "Cityscapes", "test")] # f"m{modality}")]
+
+        #To change: here we work with preprocessed npy files:
+
+        npy_datapath_train = os.path.join(self.datadir, "Cityscapes", "preprocessed", "train_32x64.npy")
+        npy_datapath_test = os.path.join(self.datadir, "Cityscapes", "preprocessed", "test_32x64.npy")
+
+        kwargs = {'num_workers': self.num_workers, 'pin_memory': self.pin_memory} if device == 'cuda' else {}
+        tx = transforms.ToTensor()
+
+        train_dataset = CityscapesDataset(npy_datapath_train, modality=modality, transform=tx)
+        test_dataset = CityscapesDataset(npy_datapath_test, modality=modality, transform=tx)
+
+
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, **kwargs)
+        test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=shuffle, **kwargs)
+
+        return train_loader, test_loader
+
+    def get_dataloader_cityscapes_multimodal(self, batch_size, shuffle=True, device='cuda', subset_percentage=1.0):
+        """
+        Get Cityscapes multimodal DataLoaders.
+        
+        Args:
+            batch_size (int): Number of samples per batch.
+            shuffle (bool): Whether to shuffle the data.
+            device (str): Device to load data (e.g., 'cuda' or 'cpu').
+        
+        Returns:
+            tuple: (train_loader, test_loader)
+        """
+
+        npy_datapath_train = os.path.join(self.datadir, "Cityscapes", "preprocessed", "train_32x64.npy")
+        npy_datapath_test = os.path.join(self.datadir, "Cityscapes", "preprocessed", "test_32x64.npy")
+
+        kwargs = {'num_workers': self.num_workers, 'pin_memory': self.pin_memory} if device == 'cuda' else {}
+        tx = transforms.ToTensor()
+
+        train_dataset = CityscapesMultiModalDataset(npy_datapath_train, transform=tx, subset_percentage=subset_percentage)
+        test_dataset = CityscapesMultiModalDataset(npy_datapath_test, transform=tx, subset_percentage=subset_percentage)
+
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, **kwargs)
+        test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=shuffle, **kwargs)
+
+        return train_loader, test_loader
+
     def get_dataloader(self, dataset_name, batch_size, shuffle=True, device='cuda', **kwargs):
         """
         General method to get DataLoaders based on the dataset name.
         
         Args:
-            dataset_name (str): Name of the dataset ('polymnist_unimodal', 'polymnist_multimodal', 'cub_caption', 'cub_image', 'cub_joint').
+            dataset_name (str): Name of the dataset ('polymnist_unimodal', 'polymnist_multimodal', 'cub_caption', 'cub_image', 'cub_joint', 'cityscapaes_unimodal').
             batch_size (int): Number of samples per batch.
             shuffle (bool): Whether to shuffle the data.
             device (str): Device to load data (e.g., 'cuda' or 'cpu').
@@ -216,6 +277,11 @@ class DataLoaderFactory:
             return self.get_dataloader_cub_image(batch_size, shuffle, device)
         elif dataset_name == 'cub_joint':
             return self.get_dataloader_cub_joint(batch_size, shuffle, device)
+        elif dataset_name == 'cityscapes_unimodal':
+            modality = kwargs.get('modality', 1)
+            return self.get_dataloader_cityscapes_unimodal(batch_size, shuffle, device, modality=modality)
+        elif dataset_name == 'cityscapes_multimodal':
+            subset_percentage = kwargs.get('subset_percentage', 1.0)
+            return self.get_dataloader_cityscapes_multimodal(batch_size, shuffle, device, subset_percentage=subset_percentage)
         else:
-            raise ValueError(f"Dataset '{dataset_name}' is not supported. Choose from 'polymnist_unimodal', 'polymnist_multimodal', 'cub_caption', 'cub_image', 'cub_joint'.")
-
+            raise ValueError(f"Dataset '{dataset_name}' is not supported. Choose from 'polymnist_unimodal', 'polymnist_multimodal', 'cub_caption', 'cub_image', 'cub_joint', 'cityscapes_unimodal'.")

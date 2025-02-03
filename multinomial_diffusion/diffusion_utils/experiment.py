@@ -8,7 +8,14 @@ from shutil import copy2
 import pathlib
 
 import subprocess
-hostname = subprocess.run(["hostname"], capture_output=True, text=True).stdout.strip()
+import sys
+
+if sys.version_info >= (3, 7):
+    hostname = subprocess.run(["hostname"], capture_output=True, text=True).stdout.strip()
+else:
+    process = subprocess.Popen(["hostname"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, stderr = process.communicate()
+    hostname = stdout.decode().strip()
 
 # Experiment
 from diffusion_utils import BaseExperiment
