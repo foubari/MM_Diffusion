@@ -16,15 +16,8 @@ import argparse
 from multinomial_diffusion.segmentation_diffusion.multimodal.model import MultiModalSegmentationUnet
 from multinomial_diffusion.segmentation_diffusion.model import get_model as get_model_seg_unet
 from multinomial_diffusion.segmentation_diffusion.experiment import Experiment, CondExperiment, add_exp_args
-
-# Data
-add_parent_path(level=1)
 from datasets.data import get_data, get_data_id, add_data_args
-
-# Model
 from model import get_model, get_model_id, add_model_args
-
-# Optim
 from diffusion_utils.optim.multistep import get_optim, get_optim_id, add_optim_args
 
 
