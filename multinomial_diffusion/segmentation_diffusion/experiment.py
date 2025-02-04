@@ -35,6 +35,7 @@ class Experiment(DiffusionExperiment):
         loss_count = 0
         for x in self.train_loader:
             self.optimizer.zero_grad()
+            print(x.shape)
             loss = elbo_bpd(self.model, x.to(self.args.device))
             loss.backward()
             if self.args.clip_value: torch.nn.utils.clip_grad_value_(self.model.parameters(), self.args.clip_value)

@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import random
 
 from torch.utils.data import Dataset
 from PIL import Image
@@ -118,6 +119,7 @@ class CityscapesMultiModalDataset(Dataset):
     def __getitem__(self, index):
 
         img = self.data[index]
+        print(img.shape)
         img = img.long()
         img = map_id_to_category_id[img] #shape (1, H, W)
 
@@ -128,18 +130,27 @@ class CityscapesMultiModalDataset(Dataset):
             img = self.pre_transform(img)
             img = np.array(img)
             img = torch.tensor(img).long()
+        
+        #img = img.squeeze()  # Remove singleton dimensions
+        C, H, W = img.shape  # C should be 1, so we preserve it
+        meta_img = []
+        print(img.shape)  # Should still be (1, H, W)
 
-        H, W = img.shape
-        meta_img = np.zeros((H, W), dtype=np.uint8)
-        for imeta_idx in category_ids:
-            meta_img[img == id] = 1
+        for meta_idx in category_ids:
+            _modality_img = torch.zeros((C, H, W), dtype=torch.uint8)  # Maintain (1, H, W)
+            _modality_img[img == meta_idx] = 1  # Apply mask
+            _modality_img = _modality_img.unsqueeze(1)
+            meta_img.append(_modality_img)  # Already has (1, H, W)
+
+        meta_img = torch.cat(meta_img, dim=0).long()  # Concatenate along the first dimension
+        print(img.shape, meta_img.shape)
 
         if self.post_transform:
-            meta_img = self.post_transform(meta_img)
-            meta_img = np.array(meta_img)
-            meta_img = torch.tensor(meta_img)
+            raise NotImplementedError("Post tranforms are still not implemented in CityscapesMultiModalDataset")
 
-        return meta_img, 0
+        print(img.shape, meta_img.shape)
+
+        return meta_img
 
     def __len__(self):
         return len(self.data)

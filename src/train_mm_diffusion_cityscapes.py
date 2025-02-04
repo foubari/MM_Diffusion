@@ -31,7 +31,7 @@ torch.manual_seed(0)
 
 ### DATA ###
 data_path = 'data'
-SUBSET_RATIO = 0.1
+SUBSET_RATIO = 1.0
 N_MODALITIES = 8
 dlf = DataLoaderFactory(datadir=data_path, num_workers=1, pin_memory=True)
 
@@ -46,8 +46,9 @@ add_exp_args(parser)
 add_data_args(parser)
 add_model_args(parser)
 add_optim_args(parser)
+parser.data_root = data_path
 args = parser.parse_args()
-set_seeds(args.seed)
+args.data_root = data_path
 
 ##################
 ## Specify data ##
@@ -120,7 +121,7 @@ def get_model(dataset_name, params_diff, params_vaes):
     params_diff["modalities_vaes"] = [CS_unimodal(params) for params in params_vaes]
 
     if dataset_name == 'cityscapes_multimodal':
-        return MultiModalSegmentationUnet(params_diff)
+        return MultiModalSegmentationUnet(**params_diff)
     else:
         raise ValueError(f"Dataset '{dataset_name}' is not supported. Choose from 'cityscapes_multimodal'.")
     
@@ -152,8 +153,9 @@ def train(model, train_loader, optimizer, epochs, beta, log_path, objective,  lo
         batch_divs = []
 
         for i, (data,_) in enumerate(train_loader):
-            if dataset_name == 'polymnist_mulimodal':
-                data = data[0]
+            #if dataset_name == 'polymnist_mulimodal':
+            #    data = data[0]
+            print(f"data shape: {data.shape}")
             data = data.to(device)
             optimizer.zero_grad()
             elbo, neg_logliklihood, div = objective(model, data, beta, K=K)
@@ -223,7 +225,7 @@ class ParamsVAE:
 """
 Training parameters
 """
-batch_size = 256
+batch_size = 16
 epochs = 1000
 obj = 'elbo'
 objective = get_objective(obj)
@@ -233,16 +235,14 @@ plot_freq = 5
 lr = 1e-3
 
 params_vaes = [ParamsVAE(dataset_name=dataset_name, device=device, modality=mod) for mod in range(N_MODALITIES)]
-_, _, data_shape, num_classes = get_data(args)
-params_diff = {"seg_unet": get_model_seg_unet(args, data_shape=data_shape)}
+params_diff = {"seg_unet": get_model_seg_unet(args, data_shape=(1, 32, 64))}
 model = get_model(dataset_name, params_diff, params_vaes).to(device)
-optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()),
-                       lr=lr, amsgrad=True)
+optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr, amsgrad=True)
 
 ### TRAIN ###
 
-train_loader, test_loader = dlf.get_dataloader(dataset_name, batch_size, modality=params.modality, subset_percentage=SUBSET_RATIO)
-log_path = create_log_dir(epochs, beta, params.latent_dim, params.priorposterior, obj=obj, modality=params.modality)
+train_loader, test_loader = dlf.get_dataloader(dataset_name, batch_size, subset_percentage=SUBSET_RATIO)
+log_path = create_log_dir(epochs, beta, params_vaes[0].latent_dim, params_vaes[0].priorposterior, obj=obj)
 mean_losses, mean_neg_loglikelihood,  mean_divs = train(model, train_loader, optimizer, epochs, beta, log_path,
           log_interval=1, K=K, objective=objective)
 

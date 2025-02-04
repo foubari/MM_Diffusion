@@ -218,7 +218,6 @@ class DataLoaderFactory:
         train_dataset = CityscapesDataset(npy_datapath_train, modality=modality, transform=tx)
         test_dataset = CityscapesDataset(npy_datapath_test, modality=modality, transform=tx)
 
-
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, **kwargs)
         test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=shuffle, **kwargs)
 
@@ -241,10 +240,14 @@ class DataLoaderFactory:
         npy_datapath_test = os.path.join(self.datadir, "Cityscapes", "preprocessed", "test_32x64.npy")
 
         kwargs = {'num_workers': self.num_workers, 'pin_memory': self.pin_memory} if device == 'cuda' else {}
-        tx = transforms.ToTensor()
 
-        train_dataset = CityscapesMultiModalDataset(npy_datapath_train, transform=tx, subset_percentage=subset_percentage)
-        test_dataset = CityscapesMultiModalDataset(npy_datapath_test, transform=tx, subset_percentage=subset_percentage)
+        train_dataset = CityscapesMultiModalDataset(npy_datapath_train, subset_percentage=subset_percentage)
+        test_dataset = CityscapesMultiModalDataset(npy_datapath_test, subset_percentage=subset_percentage)
+        print("------------------")
+        print("------------------")
+        print("------------------")
+        print("------------------")
+        print(f"bs {batch_size}")
 
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, **kwargs)
         test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=shuffle, **kwargs)

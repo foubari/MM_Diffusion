@@ -2,7 +2,9 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from inspect import isfunction
-
+from typing import List
+from src.models.vae_base import VAE
+import random
 
 """
 Based in part on: https://github.com/lucidrains/denoising-diffusion-pytorch/blob/5989f4c77eafcdc6be0fb4739f0f277a6dd7f7d8/denoising_diffusion_pytorch/denoising_diffusion_pytorch.py#L281
@@ -1493,7 +1495,141 @@ class PartialDiffusion(torch.nn.Module):
             print(f'Chain timestep {i:4d}', end='\r')
             t = torch.full((b,), i, device=device, dtype=torch.long)
             log_z = self.p_sample(log_z, t,constraint=constraint)
-
             zs[i] = log_onehot_to_index(log_z)
         print()
         return zs
+
+class MultimodalMultinomialDiffusion(MultinomialDiffusion):
+
+    def __init__(self, num_classes, shape, denoise_fn, modalities_vaes: List[VAE], timesteps=1000,
+                 loss_type='vb_stochastic', loss_weighted=False, parametrization='x0', strategy: str = "mixture_of_experts"):
+        
+        assert strategy in ["mixture_of_experts", "concatenation"]
+
+        super().__init__(
+            num_classes,
+            shape,
+            denoise_fn,
+            timesteps=1000,
+            loss_type='vb_stochastic', 
+            loss_weighted=False, 
+            parametrization='x0',
+        )
+        self.strategy = strategy
+        self.n_modalities = len(modalities_vaes)
+        self.modalities_vaes = torch.nn.ModuleList(modalities_vaes)
+
+    def encode(self, x: torch.Tensor):
+        print("------------------")
+        print("------------------")
+        print("------------------")
+        print(x.shape, x[:, 0, :, :].shape, type(x[:, 0, :, :]))
+
+        if self.strategy.lower() == "mixture_of_experts":
+
+            # sample a modality index
+            modality_idx = random.randint(0, self.n_modalities-1)
+
+            # encode
+            vae = self.modalities_vaes[modality_idx]
+            qz_x, px_z, z = vae(x[:, modality_idx, :, :])
+
+            return z, modality_idx
+
+        if self.strategy.lower() == "concatenation":
+
+            # independently encode all the modalities
+            qz_params_lst = []
+            qz_x_dist_lst = []
+            z_lst = []
+            for modal_idx, vae in enumerate(self.modalities_vaes):
+
+                _qz_x, _px_z, _z = vae(x[:, modal_idx, :, :])
+
+                qz_params_lst.append(_qz_x_params)
+                qz_x_dist_lst.append(_qz_x_dist)
+                z_lst.append(_z)
+            
+            # concatenate the encoded modalities
+            z = torch.concatenation(z_lst)
+
+            print(z.shape)
+
+            return z, None
+
+        if self.strategy.lower() == "product_of_experts":
+
+            # independently encode all the modalities
+            qz_params_lst = []
+            qz_x_dist_lst = []
+            z_lst = []
+            for modal_idx, vae in enumerate(self.modalities_vaes):
+
+                _qz_x_params = vae.encode(x[:, modal_idx, :, :])
+                _qz_x_dist = vae.get_encoding_dist()
+                _z = _qz_x_dist(*_qz_x_params)
+
+                qz_params_lst.append(_qz_x_params)
+                qz_x_dist_lst.append(_qz_x_dist)
+                z_lst.append(_z)
+            
+            z = torch.concatenation(z_lst) # remplace with product of experts
+
+            print(z.shape)
+
+            return z, None
+
+    def log_prob(self, x):
+        b, device = x.size(0), x.device
+        if self.training:
+            return self._train_loss(x)
+
+        else:
+            log_x_start = index_to_log_onehot(x, self.num_classes)
+
+            t, pt = self.sample_time(b, device, 'importance')
+
+            kl = self.compute_Lt(
+                log_x_start, self.q_sample(log_x_start=log_x_start, t=t), t)
+
+            kl_prior = self.kl_prior(log_x_start)
+
+            # Upweigh loss term of the kl
+            loss = kl / pt + kl_prior
+
+            return -loss
+
+    def _train_loss(self, x):
+        b, device = x.size(0), x.device
+
+        # get latent variable
+        z, _ = self.encode(x)
+
+        if self.loss_type == 'vb_stochastic':
+            z_start = z
+
+            t, pt = self.sample_time(b, device, 'importance')
+            print(z_start)
+            log_z_start = index_to_log_onehot(z_start, self.num_classes) # if the latent space is continuos, we cannot use multinomial diffusion
+
+            kl = self.compute_Lt(
+                log_z_start, self.q_sample(log_x_start=log_x_start, t=t), t, weighted=self.loss_weighted)
+
+            Lt2 = kl.pow(2)
+            Lt2_prev = self.Lt_history.gather(dim=0, index=t)
+            new_Lt_history = (0.1 * Lt2 + 0.9 * Lt2_prev).detach()
+            self.Lt_history.scatter_(dim=0, index=t, src=new_Lt_history)
+            self.Lt_count.scatter_add_(dim=0, index=t, src=torch.ones_like(Lt2))
+
+            kl_prior = self.kl_prior(log_z_start)
+
+            # Upweigh loss term of the kl
+            vb_loss = kl / pt + kl_prior
+
+            return -vb_loss
+
+        elif self.loss_type == 'vb_all':
+            # Expensive, dont do it ;).
+            return -self.nll(z)
+        else:
+            raise ValueError()

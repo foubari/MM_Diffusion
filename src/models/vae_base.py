@@ -111,12 +111,21 @@ class CatVAE(nn.Module):
             Encoding dist, latents, decoding dist
 
         """
+
+        if K != 1:
+            raise NotImplementedError(f"Only sample size K=1 is currently supported")
+
         self._qz_x_params = self.enc(x) # Get encoding distribution params from encoder
         qz_x = self.qz_x(*self._qz_x_params) # Encoding distribution
-        K=1 #TODO : K-sample in the categorical case
         zs = qz_x.rsample(torch.Size([K])) # K-sample reparameterization trick
         px_z = self.px_z(logits=self.dec(zs)) # Get decoding distribution
         return qz_x, px_z, zs
+
+    def encode(self, x):
+        return self.enc(x)
+
+    def get_encoding_dist(self):
+        return self.qz_x
 
     def generate(self, N, K=1):
         self.eval()
