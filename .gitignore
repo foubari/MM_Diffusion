@@ -4,10 +4,8 @@
 **/*.jpeg
 **/*.zip
 .vscode
-**/*.npy
 .code-workspace
 .env
 **/.ipynb_checkpoints
-data
 .venv
 log
